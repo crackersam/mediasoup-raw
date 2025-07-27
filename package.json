@@ -10,6 +10,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "mediasoup": "^3.16.7",
+    "mediasoup-client": "^3.12.5",
     "next": "15.4.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
