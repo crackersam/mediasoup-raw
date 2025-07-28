@@ -11,6 +11,7 @@ export default function Home() {
   const [roomName, setRoomName] = useState("");
   const [hasJoined, setHasJoined] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const producerTransport = useRef<types.Transport | null>(null);
   const device = useRef<Device | null>(null);
@@ -105,6 +106,7 @@ export default function Home() {
       });
       console.log("Join Room Response:", joinRoomResp.current);
       device.current = new Device();
+
       if (joinRoomResp.current) {
         await device.current.load({
           routerRtpCapabilities: joinRoomResp.current.routerRtpCapabilities,
@@ -115,6 +117,7 @@ export default function Home() {
           device.current,
           consumers
         );
+
         console.log("activeSpeakerList:", joinRoomResp.current);
         if (joinRoomResp.current.activeSpeakerList) {
           setActives(
@@ -128,6 +131,25 @@ export default function Home() {
               )
           );
         }
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+
+          setLocalStream(stream);
+          producerTransport.current = await createProducerTransport(
+            socket,
+            device.current
+          );
+          producers.current = await createProducer(
+            stream,
+            producerTransport.current
+          );
+        } catch (error) {
+          console.error("Error getting user media:", error);
+        }
       } else {
         console.error("joinRoomResp.current is null");
       }
@@ -136,27 +158,12 @@ export default function Home() {
     }
   };
 
-  const handleGetLocalFeed = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        producerTransport.current = await createProducerTransport(
-          socket,
-          device.current
-        );
-        producers.current = await createProducer(
-          stream,
-          producerTransport.current
-        );
-      }
-    } catch (error) {
-      console.error("Error getting user media:", error);
+  useEffect(() => {
+    if (localStream && videoRef.current && hasJoined) {
+      videoRef.current.srcObject = localStream;
     }
-  };
+  }, [localStream, hasJoined]);
+
   const toggleMuteAudio = async () => {
     console.log(producers.current);
     if (producers.current) {
@@ -182,113 +189,93 @@ export default function Home() {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        padding: "20px",
-        maxWidth: "400px",
-        margin: "0 auto",
-      }}
-    >
-      <h2 style={{ marginBottom: "20px" }}>Socket.IO Chat Room</h2>
-
-      <p>Has joined: {hasJoined ? "yes" : "no"}</p>
-      <input
-        type="text"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-        placeholder="Enter Username"
-        style={{
-          margin: "10px 0",
-          padding: "10px",
-          width: "100%",
-          boxSizing: "border-box",
-        }}
-        disabled={hasJoined}
-      />
-      <input
-        type="text"
-        value={roomName}
-        onChange={(e) => setRoomName(e.target.value)}
-        placeholder="Enter Room Name"
-        style={{
-          margin: "10px 0",
-          padding: "10px",
-          width: "100%",
-          boxSizing: "border-box",
-        }}
-        disabled={hasJoined}
-      />
-      <button
-        onClick={handleJoin}
-        disabled={!username || !roomName || hasJoined}
-        style={{
-          padding: "10px 20px",
-          backgroundColor: "#007bff",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-          cursor: "pointer",
-          marginTop: "10px",
-          width: "100%",
-        }}
-      >
-        Join Room
-      </button>
-      <button
-        onClick={handleGetLocalFeed}
-        style={{
-          padding: "10px 20px",
-          backgroundColor: "#007bff",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-          cursor: "pointer",
-          marginTop: "10px",
-          width: "100%",
-        }}
-      >
-        Get Local Feed
-      </button>
-      <button
-        onClick={toggleMuteAudio}
-        style={{
-          padding: "10px 20px",
-          backgroundColor: "#007bff",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-          cursor: "pointer",
-          marginTop: "10px",
-          width: "100%",
-        }}
-      >
-        {isAudioMuted ? "Unmute Audio" : "Mute Audio"}
-      </button>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        style={{ width: "100%", marginTop: "20px" }}
-        className="border border-blue-500 rounded-lg"
-      />
-      {actives.map((consumer, index) => (
-        <div key={index} style={{ width: "100%", marginTop: "20px" }}>
-          <p>{consumer?.userName}</p>
-          <video
-            ref={(video) => {
-              if (video) {
-                video.srcObject = consumer?.combinedStream;
-              }
-            }}
-            autoPlay
-            playsInline
-            style={{ width: "100%" }}
+    <div className="relative min-h-screen p-4">
+      {!hasJoined ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center max-w-md mx-auto">
+          <h2 className="text-2xl font-bold mb-6">Socket.IO Video Rooms</h2>
+          <p className="mb-4 text-gray-600">
+            Has joined: {hasJoined ? "yes" : "no"}
+          </p>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Enter Username"
+            className="mb-4 p-3 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={hasJoined}
           />
+          <input
+            type="text"
+            value={roomName}
+            onChange={(e) => setRoomName(e.target.value)}
+            placeholder="Enter Room Name"
+            className="mb-4 p-3 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={hasJoined}
+          />
+          <button
+            onClick={handleJoin}
+            disabled={!username || !roomName || hasJoined}
+            className="mb-4 py-3 px-6 bg-blue-500 text-white font-semibold rounded-lg w-full hover:bg-blue-600 disabled:bg-gray-300"
+          >
+            Join Room
+          </button>
         </div>
-      ))}
+      ) : (
+        <>
+          <div className="absolute top-4 left-0 right-0 flex justify-center space-x-4">
+            {actives.slice(1).map((consumer, index) => (
+              <div key={index} className="w-40 h-28 flex flex-col items-center">
+                <p className="text-sm font-medium text-gray-700 mb-1">
+                  {consumer?.userName}
+                </p>
+                <video
+                  ref={(video) => {
+                    if (video) {
+                      video.srcObject = consumer?.combinedStream;
+                    }
+                  }}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full bg-black rounded-lg object-cover"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            {actives.length > 0 && (
+              <div className="w-full max-w-5xl h-2/3 flex flex-col items-center">
+                <p className="text-lg font-semibold text-white mb-2">
+                  {actives[0]?.userName}
+                </p>
+                <video
+                  ref={(video) => {
+                    if (video) {
+                      video.srcObject = actives[0]?.combinedStream;
+                    }
+                  }}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full bg-black rounded-lg object-contain"
+                />
+              </div>
+            )}
+          </div>
+          <div className="absolute bottom-4 right-4 w-40 h-28 bg-black rounded-lg overflow-hidden border border-gray-300">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <button
+            onClick={toggleMuteAudio}
+            className="absolute bottom-4 left-4 py-2 px-4 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600"
+          >
+            {isAudioMuted ? "Unmute Audio" : "Mute Audio"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
