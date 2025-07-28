@@ -57,20 +57,41 @@ export default function Home() {
         );
       }
       if (data && data.activeSpeakerList) {
-        setActives(
-          data.activeSpeakerList
-            .map((pid: string) => consumers.current[pid])
-            .filter(Boolean)
-        );
+        if (
+          data.activeSpeakerList.filter(
+            (pid: string) => pid !== producers.current?.audioProducer?.id
+          ).length > 0
+        ) {
+          setActives(
+            data.activeSpeakerList
+              .map((pid: string) => consumers.current[pid])
+              .filter(
+                (consumer: {
+                  audioConsumer: { producerId: string | undefined };
+                }) =>
+                  consumer &&
+                  producers.current?.audioProducer?.id !==
+                    consumer.audioConsumer?.producerId
+              )
+          );
+        }
       }
     });
     socket.on("updateActiveSpeakers", (data) => {
       console.log("Active speakers updated:", data);
-      if (data && data.activeSpeakerList) {
+      console.log(data?.length);
+      if (data && data.length > 0) {
         setActives(
-          data.activeSpeakerList
+          data
             .map((pid: string) => consumers.current[pid])
-            .filter(Boolean)
+            .filter(
+              (consumer: {
+                audioConsumer: { producerId: string | undefined };
+              }) =>
+                consumer &&
+                producers.current?.audioProducer?.id !==
+                  consumer.audioConsumer?.producerId
+            )
         );
       }
     });
@@ -99,7 +120,12 @@ export default function Home() {
           setActives(
             joinRoomResp.current.activeSpeakerList
               .map((pid: string) => consumers.current[pid])
-              .filter(Boolean)
+              .filter(
+                (consumer) =>
+                  consumer &&
+                  producers.current?.audioProducer?.id !==
+                    consumer.audioConsumer?.producerId
+              )
           );
         }
       } else {
@@ -246,14 +272,15 @@ export default function Home() {
         autoPlay
         playsInline
         style={{ width: "100%", marginTop: "20px" }}
+        className="border border-blue-500 rounded-lg"
       />
       {actives.map((consumer, index) => (
         <div key={index} style={{ width: "100%", marginTop: "20px" }}>
-          <p>{consumer.userName}</p>
+          <p>{consumer?.userName}</p>
           <video
             ref={(video) => {
               if (video) {
-                video.srcObject = consumer.combinedStream;
+                video.srcObject = consumer?.combinedStream;
               }
             }}
             autoPlay
