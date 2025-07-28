@@ -19,9 +19,10 @@ export default function Home() {
     videoProducer: types.Producer;
   } | null>(null);
   const joinRoomResp = useRef<{
+    activeSpeakerList: string[]; // Assuming activeSpeakerList is an array of strings (e.g., user IDs)
     routerRtpCapabilities: types.RtpCapabilities;
   } | null>(null);
-  const [consumers, setConsumers] = useState<
+  const [actives, setActives] = useState<
     {
       combinedStream: MediaStream;
       userName: string;
@@ -30,32 +31,47 @@ export default function Home() {
       videoConsumer: types.Consumer;
     }[]
   >([]);
+  const consumers = useRef<
+    Record<
+      string,
+      {
+        combinedStream: MediaStream;
+        userName: string;
+        consumerTransport: types.Transport;
+        audioConsumer: types.Consumer;
+        videoConsumer: types.Consumer;
+      }
+    >
+  >({});
 
   useEffect(() => {
     socket.connect();
-    socket.on("newProducersToConsume", (data) => {
+    socket.on("newProducersToConsume", async (data) => {
       console.log("New producers to consume:", data);
       if (data && data.audioPidsToCreate.length > 0) {
-        requestTransportToConsume(data, socket, device.current, setConsumers);
+        await requestTransportToConsume(
+          data,
+          socket,
+          device.current,
+          consumers
+        );
+      }
+      if (data && data.activeSpeakerList) {
+        setActives(
+          data.activeSpeakerList
+            .map((pid: string) => consumers.current[pid])
+            .filter(Boolean)
+        );
       }
     });
-    socket.on("newListOfActives", (data) => {
-      console.log("New list of active speakers:", data);
-      console.log(data.audioPidsToCreate.length);
-      if (data && data.audioPidsToCreate.length > 0) {
-        setConsumers((prevConsumers) => {
-          return prevConsumers.map((consumer) => {
-            const isActive = data.includes(consumer.audioConsumer.producerId);
-            if (isActive) {
-              consumer.audioConsumer.resume();
-              consumer.videoConsumer.resume();
-            } else {
-              consumer.audioConsumer.pause();
-              consumer.videoConsumer.pause();
-            }
-            return consumer;
-          });
-        });
+    socket.on("updateActiveSpeakers", (data) => {
+      console.log("Active speakers updated:", data);
+      if (data && data.activeSpeakerList) {
+        setActives(
+          data.activeSpeakerList
+            .map((pid: string) => consumers.current[pid])
+            .filter(Boolean)
+        );
       }
     });
   }, []);
@@ -76,8 +92,16 @@ export default function Home() {
           joinRoomResp.current,
           socket,
           device.current,
-          setConsumers
+          consumers
         );
+        console.log("activeSpeakerList:", joinRoomResp.current);
+        if (joinRoomResp.current.activeSpeakerList) {
+          setActives(
+            joinRoomResp.current.activeSpeakerList
+              .map((pid: string) => consumers.current[pid])
+              .filter(Boolean)
+          );
+        }
       } else {
         console.error("joinRoomResp.current is null");
       }
@@ -223,7 +247,7 @@ export default function Home() {
         playsInline
         style={{ width: "100%", marginTop: "20px" }}
       />
-      {consumers.map((consumer, index) => (
+      {actives.map((consumer, index) => (
         <div key={index} style={{ width: "100%", marginTop: "20px" }}>
           <p>{consumer.userName}</p>
           <video

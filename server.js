@@ -188,7 +188,7 @@ app.prepare().then(() => {
           audioPidsToCreate,
           videoPidsToCreate,
           associatedUserNames,
-          activeSpeakerList: client.room.activeSpeakerList.slice(0, 5),
+          activeSpeakerList: client.room.activeSpeakerList.slice(0, 2),
         });
       }
     });
