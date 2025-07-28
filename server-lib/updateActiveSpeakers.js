@@ -5,8 +5,8 @@ const updateActiveSpeakers = (room, io) => {
   // return new transports by peer
   //called by either activeSpeakerObserver (newDominantSpeaker) or startProducing
 
-  const activeSpeakers = room.activeSpeakerList.slice(0, 5);
-  const mutedSpeakers = room.activeSpeakerList.slice(5);
+  const activeSpeakers = room.activeSpeakerList.slice(0, 2);
+  const mutedSpeakers = room.activeSpeakerList.slice(2);
   const newTransportsByPeer = {};
   // loop through all connected clients in the room
   room.clients.forEach((client) => {

@@ -33,6 +33,31 @@ export default function Home() {
 
   useEffect(() => {
     socket.connect();
+    socket.on("newProducersToConsume", (data) => {
+      console.log("New producers to consume:", data);
+      if (data && data.audioPidsToCreate.length > 0) {
+        requestTransportToConsume(data, socket, device.current, setConsumers);
+      }
+    });
+    socket.on("newListOfActives", (data) => {
+      console.log("New list of active speakers:", data);
+      console.log(data.audioPidsToCreate.length);
+      if (data && data.audioPidsToCreate.length > 0) {
+        setConsumers((prevConsumers) => {
+          return prevConsumers.map((consumer) => {
+            const isActive = data.includes(consumer.audioConsumer.producerId);
+            if (isActive) {
+              consumer.audioConsumer.resume();
+              consumer.videoConsumer.resume();
+            } else {
+              consumer.audioConsumer.pause();
+              consumer.videoConsumer.pause();
+            }
+            return consumer;
+          });
+        });
+      }
+    });
   }, []);
 
   const handleJoin = async () => {
