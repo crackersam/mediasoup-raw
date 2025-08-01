@@ -4,91 +4,141 @@ class Client {
   constructor(userName, socket) {
     this.userName = userName;
     this.socket = socket;
-    //instead of calling this producerTransport, call it upstream, THIS client's transport
-    // for sending data
-    this.upstreamTransport = null;
-    //we will have an audio and video consumer
-    this.producer = {};
-    //instead of calling this consumerTransport, call it downstream,
-    // THIS client's transport for pulling data
-    this.downstreamTransports = [];
-    // {
-    // transport,
-    // associatedVideoPid
-    // associatedAudioPid
-    // audio = audioConsumer
-    // video  = videoConsumer
-    // }
-
-    //an array of consumers, each with 2 parts
-    // this.consumers = []
-    // this.rooms = []
-    this.room = null; // this will be a Room object
+    this.upstreamTransport = null; // Transport for sending data (producer)
+    this.producer = {}; // Audio and video producers
+    this.downstreamTransports = []; // Array of transports for consuming data
+    this.room = null; // Reference to Room object
   }
+
   addTransport(type, audioPid = null, videoPid = null) {
-    return new Promise(async (resolve) => {
-      const { listenIps, initialAvailableOutgoingBitrate, maxIncomingBitrate } =
-        config.webRtcTransport;
-      const transport = await this.room.router.createWebRtcTransport({
-        enableUdp: true,
-        enableTcp: true, //always use UDP unless we can't
-        preferUdp: true,
-        listenInfos: listenIps,
-        initialAvailableOutgoingBitrate,
-      });
-
-      if (maxIncomingBitrate) {
-        // maxIncomingBitrate limit the incoming bandwidth from this transport
-        try {
-          await transport.setMaxIncomingBitrate(maxIncomingBitrate);
-        } catch (err) {
-          console.log("Error setting bitrate");
-          console.log(err);
-        }
-      }
-
-      // console.log(transport)
-      const clientTransportParams = {
-        id: transport.id,
-        iceParameters: transport.iceParameters,
-        iceCandidates: transport.iceCandidates,
-        dtlsParameters: transport.dtlsParameters,
-      };
-      if (type === "producer") {
-        // set the new transport to the client's upstreamTransport
-        this.upstreamTransport = transport;
-        // setInterval(async()=>{
-        //     const stats = await this.upstreamTransport.getStats()
-        //     for(const report of stats.values()){
-        //         console.log(report.type)
-        //         if(report.type === "webrtc-transport"){
-        //             console.log(report.bytesReceived,'-',report.rtpBytesReceived)
-        //             // console.log(report)
-        //         }
-        //     }
-        // },1000)
-      } else if (type === "consumer") {
-        // add the new transport AND the 2 pids, to downstreamTransports
-        this.downstreamTransports.push({
-          transport, //will handle both audio and video
-          associatedVideoPid: videoPid,
-          associatedAudioPid: audioPid,
+    return new Promise(async (resolve, reject) => {
+      try {
+        const {
+          listenIps,
+          initialAvailableOutgoingBitrate,
+          maxIncomingBitrate,
+        } = config.webRtcTransport;
+        const transport = await this.room.router.createWebRtcTransport({
+          enableUdp: true,
+          enableTcp: true,
+          preferUdp: true,
+          listenInfos: listenIps,
+          initialAvailableOutgoingBitrate,
         });
+
+        if (maxIncomingBitrate) {
+          try {
+            await transport.setMaxIncomingBitrate(maxIncomingBitrate);
+          } catch (err) {
+            console.error("Error setting max incoming bitrate:", err);
+          }
+        }
+
+        const clientTransportParams = {
+          id: transport.id,
+          iceParameters: transport.iceParameters,
+          iceCandidates: transport.iceCandidates,
+          dtlsParameters: transport.dtlsParameters,
+        };
+
+        if (type === "producer") {
+          this.upstreamTransport = { transport }; // Wrap in object for consistency
+        } else if (type === "consumer") {
+          this.downstreamTransports.push({
+            transport,
+            associatedVideoPid: videoPid,
+            associatedAudioPid: audioPid,
+            audio: null, // Initialize consumer placeholders
+            video: null,
+          });
+        }
+
+        resolve(clientTransportParams);
+      } catch (err) {
+        console.error("Error creating WebRTC transport:", err);
+        reject(err);
       }
-      resolve(clientTransportParams);
     });
   }
+
   addProducer(kind, newProducer) {
     this.producer[kind] = newProducer;
-    if (kind === "audio") {
-      // add this to our activeSpeakerObserver
-      this.room.activeSpeakerObserver.addProducer({
-        producerId: newProducer.id,
-      });
+    if (kind === "audio" && this.room?.activeSpeakerObserver) {
+      try {
+        this.room.activeSpeakerObserver.addProducer({
+          producerId: newProducer.id,
+        });
+      } catch (err) {
+        console.error("Error adding producer to activeSpeakerObserver:", err);
+      }
     }
   }
+
   addConsumer(kind, newConsumer, downstreamTransport) {
-    downstreamTransport[kind] = newConsumer;
+    if (downstreamTransport) {
+      downstreamTransport[kind] = newConsumer;
+    } else {
+      console.error("No downstream transport found for consumer:", kind);
+    }
+  }
+
+  // New method to clean up client resources
+  close() {
+    // Close upstream transport
+    if (this.upstreamTransport?.transport) {
+      try {
+        this.upstreamTransport.transport.close();
+      } catch (err) {
+        console.error("Error closing upstream transport:", err);
+      }
+      this.upstreamTransport = null;
+    }
+
+    // Close downstream transports and consumers
+    this.downstreamTransports.forEach((transportObj) => {
+      if (transportObj.audio) {
+        try {
+          transportObj.audio.close();
+        } catch (err) {
+          console.error("Error closing audio consumer:", err);
+        }
+      }
+      if (transportObj.video) {
+        try {
+          transportObj.video.close();
+        } catch (err) {
+          console.error("Error closing video consumer:", err);
+        }
+      }
+      if (transportObj.transport) {
+        try {
+          transportObj.transport.close();
+        } catch (err) {
+          console.error("Error closing downstream transport:", err);
+        }
+      }
+    });
+    this.downstreamTransports = [];
+
+    // Close producers
+    if (this.producer.audio) {
+      try {
+        this.producer.audio.close();
+      } catch (err) {
+        console.error("Error closing audio producer:", err);
+      }
+    }
+    if (this.producer.video) {
+      try {
+        this.producer.video.close();
+      } catch (err) {
+        console.error("Error closing video producer:", err);
+      }
+    }
+    this.producer = {};
+
+    // Clear room reference
+    this.room = null;
   }
 }
 
